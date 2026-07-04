@@ -50,7 +50,30 @@ tracki/
         └── SettingsView.swift          # API token + Organization ID, Save & Connect
 ```
 
-## Build
+## Install
+
+### Homebrew (recommended)
+
+```sh
+brew install --cask mmargauxx/tap/tracki
+```
+
+Tracki is ad-hoc signed (not notarized), so on first launch either right-click the app in
+`/Applications` ▸ **Open**, or install with `brew install --cask --no-quarantine mmargauxx/tap/tracki`.
+
+Upgrade or remove:
+
+```sh
+brew upgrade --cask tracki
+brew uninstall --cask tracki      # add --zap to also remove app data
+```
+
+### Direct download
+
+Grab `Tracki.zip` from the [latest release](https://github.com/mmargauxx/tracki/releases/latest),
+unzip, move `Tracki.app` to `/Applications`, and right-click ▸ **Open** the first time.
+
+## Build from source
 
 ### Without Xcode (Command Line Tools only)
 

@@ -18,6 +18,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Menu bar only — no Dock icon, no app switcher entry.
         // (LSUIElement in Info.plist covers the bundled app; this covers bare-binary runs too.)
         NSApp.setActivationPolicy(.accessory)
+
+        // Hidden dev mode: render a sample popover PNG and exit (for README screenshots).
+        if let idx = CommandLine.arguments.firstIndex(of: "--screenshot") {
+            let path = CommandLine.arguments.indices.contains(idx + 1) ? CommandLine.arguments[idx + 1] : "screenshot.png"
+            // render() captures asynchronously (after AppKit lays out) and terminates itself.
+            MainActor.assumeIsolated { ScreenshotRenderer.render(to: path) }
+            return
+        }
+
         installEditMenu()
         statusBarController = StatusBarController()
     }

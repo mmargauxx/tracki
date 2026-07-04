@@ -16,6 +16,7 @@ make bundle            # release build → assembles & ad-hoc-signs dist/Tracki.
 make run               # bundle + launch from dist/
 make install           # bundle + install to /Applications + re-sign (quits any running copy)
 make clean             # rm -rf .build dist
+make screenshot        # render docs/screenshot.png from the real UI (via --screenshot flag)
 
 # Regenerate the app icon after editing scripts/make-icon.swift:
 swift scripts/make-icon.swift dist/AppIcon.iconset && iconutil -c icns dist/AppIcon.iconset -o Tracki/AppIcon.icns

@@ -6,7 +6,7 @@ CONTENTS := $(BUNDLE)/Contents
 
 INSTALL_DIR := /Applications
 
-.PHONY: build bundle run install clean
+.PHONY: build bundle run install screenshot clean
 
 build:
 	swift build -c $(CONFIG)
@@ -31,6 +31,10 @@ install: bundle
 	cp -R $(BUNDLE) "$(INSTALL_DIR)/$(APP).app"
 	codesign --force --sign - --entitlements Tracki.entitlements "$(INSTALL_DIR)/$(APP).app"
 	@echo "Installed $(INSTALL_DIR)/$(APP).app — launch it from Spotlight (⌘Space → \"Tracki\")"
+
+# Render docs/screenshot.png from the real UI (offscreen render, no live app needed).
+screenshot: build
+	.build/$(CONFIG)/$(APP) --screenshot docs/screenshot.png
 
 clean:
 	rm -rf .build dist

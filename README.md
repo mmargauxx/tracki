@@ -2,6 +2,10 @@
 
 A lightweight, dependency-free Toggl Track menu bar app for macOS 13+.
 
+<p align="center">
+  <img src="docs/screenshot.png" alt="Tracki menu bar popover — running timer with description, client and project pickers, and a Stop button" width="380">
+</p>
+
 - Menu bar only — no Dock icon (`LSUIElement`), `NSStatusItem` + `NSPopover` with SwiftUI inside.
 - Live `HH:MM:SS` in the menu bar while a timer runs; icon only when idle.
 - Start/stop Toggl timers with description, project, and client pickers.

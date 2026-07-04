@@ -1,0 +1,16 @@
+# Build artifacts
+.build/
+dist/
+
+# Xcode (generated from project.yml via XcodeGen)
+*.xcodeproj/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+
+# macOS
+.DS_Store
+
+# Claude Code local skill scaffolding (not part of the app)
+.agents/
+skills-lock.json

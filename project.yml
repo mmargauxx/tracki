@@ -1,0 +1,21 @@
+# XcodeGen spec — run `xcodegen generate` (brew install xcodegen) to produce Tracki.xcodeproj
+name: Tracki
+options:
+  bundleIdPrefix: app.tracki
+  deploymentTarget:
+    macOS: "13.0"
+targets:
+  Tracki:
+    type: application
+    platform: macOS
+    sources:
+      - path: Tracki
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.tracki.Tracki
+        MACOSX_DEPLOYMENT_TARGET: "13.0"
+        INFOPLIST_FILE: Tracki/Info.plist
+        GENERATE_INFOPLIST_FILE: false
+        CODE_SIGN_ENTITLEMENTS: Tracki.entitlements
+        ENABLE_HARDENED_RUNTIME: true
+        SWIFT_VERSION: "5.9"

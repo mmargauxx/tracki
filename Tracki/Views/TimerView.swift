@@ -2,6 +2,7 @@ import SwiftUI
 
 struct TimerView: View {
     @ObservedObject var viewModel: TimerViewModel
+    @State private var showErrorDetail = false
 
     var body: some View {
         VStack(spacing: 12) {
@@ -40,10 +41,7 @@ struct TimerView: View {
             .pickerStyle(.menu)
 
             if let errorMessage = viewModel.errorMessage {
-                Text(errorMessage)
-                    .font(.caption)
-                    .foregroundColor(.red)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                errorSection(errorMessage)
             }
 
             Button(action: viewModel.startStop) {
@@ -73,6 +71,35 @@ struct TimerView: View {
     private var startButtonTitle: String {
         if viewModel.isRunning { return "Stop" }
         return viewModel.isOffline ? "Start Offline" : "Start"
+    }
+
+    /// Errors are collapsed behind a small toggle — the full message (often a long/cryptic
+    /// API body) is only shown when expanded.
+    private func errorSection(_ message: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.15)) { showErrorDetail.toggle() }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                    Text("Error")
+                    Spacer()
+                    Image(systemName: showErrorDetail ? "chevron.up" : "chevron.down")
+                }
+                .font(.caption.weight(.medium))
+                .foregroundColor(.red)
+            }
+            .buttonStyle(.plain)
+
+            if showErrorDetail {
+                Text(message)
+                    .font(.caption2)
+                    .foregroundColor(.red)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var unsyncedSection: some View {

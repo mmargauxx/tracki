@@ -45,6 +45,42 @@ resources) — add it to `exclude:` in `Package.swift` (currently `Info.plist`, 
 into `Contents/Resources/`; there is deliberately **no SPM resource bundle**, so look them up
 via `Bundle.main`, not `Bundle.module`.
 
+## Releasing
+
+Releases are **manual** — there's no CI. Distribution is a GitHub release plus a Homebrew cask
+that lives in a **separate repo**, `mmargauxx/homebrew-tap` (`Casks/tracki.rb`).
+
+```sh
+# 1. Bump BOTH keys in Tracki/Info.plist: CFBundleShortVersionString (1.1.0) and
+#    CFBundleVersion (2). Commit and push to main.
+# 2. Build and zip. Use ditto, not `zip` — it preserves the code signature.
+make bundle && ditto -c -k --keepParent dist/Tracki.app dist/Tracki.zip
+# 3. Cut the release.
+gh release create v1.1.0 dist/Tracki.zip -R mmargauxx/tracki --title "Tracki 1.1.0" --notes "..."
+# 4. Get the checksum from the DOWNLOADED asset, not the local zip.
+curl -sL -o /tmp/t.zip https://github.com/mmargauxx/tracki/releases/download/v1.1.0/Tracki.zip
+shasum -a 256 /tmp/t.zip
+# 5. In mmargauxx/homebrew-tap, update `version` and `sha256` in Casks/tracki.rb, then push.
+# 6. Verify without installing — this downloads and validates the checksum:
+brew update && brew fetch --cask mmargauxx/tap/tracki
+```
+
+Gotchas, each of which has bitten:
+- **Verify the zip round-trips** before releasing: `ditto -x -k` it to a temp dir and run
+  `codesign --verify --deep --strict` on the result. A signature broken by zipping is invisible
+  until a user hits Gatekeeper.
+- **`make install` goes behind Homebrew's back.** It overwrites `/Applications/Tracki.app`
+  while brew still records the old version. `brew upgrade --cask tracki` reconciles it.
+- **Upgrading doesn't stop the running app.** Brew deletes the old bundle out from under the
+  live process, which keeps running the old code — quit and relaunch, or you're testing the
+  previous version.
+- **Brew quarantines cask installs**, and Tracki is only ad-hoc signed, so a normal upgrade
+  trips Gatekeeper. Use `brew upgrade --cask --no-quarantine tracki`, or clear it after the
+  fact with `xattr -d -r com.apple.quarantine /Applications/Tracki.app`.
+- The cask's `zap trash:` covers `~/Library/Application Support/Tracki`, which holds both
+  `pending-entries.json` and the user's custom `flyby.png`. Anything new stored elsewhere
+  needs adding there.
+
 ## Architecture
 
 **Menu-bar-only app.** `TrackiApp.swift` is an `@main` `NSApplicationDelegate` with

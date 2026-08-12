@@ -45,8 +45,14 @@ final class TogglV2Client: TogglBackend {
     // MARK: - Connect
 
     func connect() async throws {
-        let settings: UserSettings = try await request(method: "GET", path: "users/me/settings")
-        workspaceId = settings.currentWorkspaceId
+        do {
+            let settings: UserSettings = try await request(method: "GET", path: "users/me/settings")
+            workspaceId = settings.currentWorkspaceId
+        } catch TogglAPIError.http(let status, _) where status == 403 {
+            // Not org-scoped, so a 403 here really is a bad/revoked key — report it as such
+            // rather than letting the raw HTTP error reach the login screen.
+            throw TogglAPIError.unauthorized
+        }
     }
 
     private func resolvedWorkspaceId() throws -> Int {
@@ -157,20 +163,24 @@ final class TogglV2Client: TogglBackend {
         ]
         if let projectId { body["project_id"] = projectId }
         do {
-            let entry: V2TimeEntry = try await request(
-                method: "POST",
-                path: "organizations/\(org)/workspaces/\(ws)/tracking/start",
-                body: body
-            )
-            return entry.asTimeEntry(workspaceId: ws)
-        } catch TogglAPIError.http(let status, _) where status == 402 {
-            // /tracking is gated on this tier — create a running entry via time-entries.
-            let entry: V2TimeEntry = try await request(
-                method: "POST",
-                path: "organizations/\(org)/workspaces/\(ws)/time-entries",
-                body: body
-            )
-            return entry.asTimeEntry(workspaceId: ws)
+            do {
+                let entry: V2TimeEntry = try await request(
+                    method: "POST",
+                    path: "organizations/\(org)/workspaces/\(ws)/tracking/start",
+                    body: body
+                )
+                return entry.asTimeEntry(workspaceId: ws)
+            } catch TogglAPIError.http(let status, _) where status == 402 {
+                // /tracking is gated on this tier — create a running entry via time-entries.
+                let entry: V2TimeEntry = try await request(
+                    method: "POST",
+                    path: "organizations/\(org)/workspaces/\(ws)/time-entries",
+                    body: body
+                )
+                return entry.asTimeEntry(workspaceId: ws)
+            }
+        } catch {
+            throw Self.mapOrganizationError(error)
         }
     }
 
@@ -211,6 +221,8 @@ final class TogglV2Client: TogglBackend {
             ) as V2TimeEntry?
         } catch TogglAPIError.http(let status, _) where status == 404 {
             return // entry gone — nothing to update, let the stop that follows clear it
+        } catch {
+            throw Self.mapOrganizationError(error)
         }
     }
 
@@ -218,26 +230,30 @@ final class TogglV2Client: TogglBackend {
         let ws = try resolvedWorkspaceId()
         let org = try resolvedOrganizationId()
         do {
-            _ = try await requestOptional(
-                method: "POST",
-                path: "organizations/\(org)/workspaces/\(ws)/tracking/stop",
-                body: ["end": Self.rfc3339.string(from: Date())]
-            ) as V2TimeEntry?
-        } catch TogglAPIError.http(let status, _) where status == 409 || status == 404 {
-            return // 409 already stopped, 404 entry not found — nothing left to stop
-        } catch TogglAPIError.http(let status, _) where status == 402 {
-            // /tracking is gated on this tier — finalize via time-entries by setting a
-            // positive duration (elapsed seconds), which stops the running entry.
-            let elapsed = max(0, Int(Date().timeIntervalSince(entry.start)))
             do {
                 _ = try await requestOptional(
-                    method: "PATCH",
-                    path: "organizations/\(org)/workspaces/\(ws)/time-entries/\(entry.id)",
-                    body: ["duration": elapsed]
+                    method: "POST",
+                    path: "organizations/\(org)/workspaces/\(ws)/tracking/stop",
+                    body: ["end": Self.rfc3339.string(from: Date())]
                 ) as V2TimeEntry?
-            } catch TogglAPIError.http(let s, _) where s == 409 || s == 404 {
-                return // already stopped/gone
+            } catch TogglAPIError.http(let status, _) where status == 409 || status == 404 {
+                return // 409 already stopped, 404 entry not found — nothing left to stop
+            } catch TogglAPIError.http(let status, _) where status == 402 {
+                // /tracking is gated on this tier — finalize via time-entries by setting a
+                // positive duration (elapsed seconds), which stops the running entry.
+                let elapsed = max(0, Int(Date().timeIntervalSince(entry.start)))
+                do {
+                    _ = try await requestOptional(
+                        method: "PATCH",
+                        path: "organizations/\(org)/workspaces/\(ws)/time-entries/\(entry.id)",
+                        body: ["duration": elapsed]
+                    ) as V2TimeEntry?
+                } catch TogglAPIError.http(let s, _) where s == 409 || s == 404 {
+                    return // already stopped/gone
+                }
             }
+        } catch {
+            throw Self.mapOrganizationError(error)
         }
     }
 
@@ -293,8 +309,12 @@ final class TogglV2Client: TogglBackend {
             } catch {
                 throw TogglAPIError.decoding(error)
             }
-        case 401, 403:
+        case 401:
             throw TogglAPIError.unauthorized
+        // 403 is deliberately NOT collapsed into `.unauthorized`: on org-scoped endpoints it
+        // means "that organization isn't yours" (see docs/toggl-v2-api.md), which
+        // `mapOrganizationError` turns into an actionable Organization ID hint. Callers that
+        // are genuinely auth-only (`connect`) remap it themselves.
         default:
             throw TogglAPIError.http(status: http.statusCode, body: String(data: data, encoding: .utf8) ?? "")
         }

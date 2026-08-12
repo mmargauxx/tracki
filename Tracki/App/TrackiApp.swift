@@ -27,6 +27,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        // Hidden dev mode: fly one reminder across the screen and exit. Lets you iterate on
+        // the flyby artwork without waiting out a real reminder interval.
+        if CommandLine.arguments.contains("--flyby") {
+            MainActor.assumeIsolated {
+                print(FlybyArtwork.load() == nil
+                      ? "flyby: no artwork found — using the text fallback. See FlybyArtwork."
+                      : "flyby: artwork loaded.")
+                FlybyPresenter.show(title: "Still tracking · 30m", subtitle: "Preview reminder")
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + FlybyPresenter.travelDuration + 1) {
+                NSApp.terminate(nil)
+            }
+            return
+        }
+
         installEditMenu()
         statusBarController = StatusBarController()
     }

@@ -67,6 +67,10 @@ struct SettingsView: View {
 
             Divider()
 
+            remindersSection
+
+            Divider()
+
             Button("Quit Tracki") {
                 NSApp.terminate(nil)
             }
@@ -77,5 +81,70 @@ struct SettingsView: View {
         }
         .padding()
         .frame(width: 320)
+    }
+
+    /// Periodic "you're still tracking" flyby. Only fires while a timer is running.
+    private var remindersSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Picker("Remind me", selection: $viewModel.reminderInterval) {
+                ForEach(ReminderInterval.allCases) { interval in
+                    Text(interval.label).tag(interval)
+                }
+            }
+            .pickerStyle(.menu)
+
+            HStack(spacing: 6) {
+                Text(viewModel.reminderInterval == .off
+                     ? "No reminders while tracking."
+                     : "Flies across the screen while a timer runs.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Spacer()
+                Button("Preview", action: viewModel.previewFlyby)
+                    .buttonStyle(.link)
+                    .font(.caption)
+            }
+
+            flybyImageControls
+        }
+    }
+
+    /// Swap the artwork that flies across the screen.
+    private var flybyImageControls: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                Button("Choose Image…", action: chooseFlybyImage)
+                    .controlSize(.small)
+                if viewModel.hasCustomFlybyImage {
+                    Button("Reset", action: viewModel.resetFlybyImage)
+                        .controlSize(.small)
+                }
+                Spacer()
+            }
+
+            Toggle("Remove background", isOn: $viewModel.flybyRemoveBackground)
+                .toggleStyle(.checkbox)
+                .font(.caption)
+
+            Text(viewModel.flybyMessage
+                 ?? "Most images have a solid background, which would fly as a rectangle.")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func chooseFlybyImage() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.image]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.message = "Choose the image that flies across your screen"
+        panel.prompt = "Use Image"
+        // The popover is transient and closes when the panel takes focus; activating first
+        // makes sure the panel comes to the front of an accessory (LSUIElement) app.
+        NSApp.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        viewModel.importFlybyImage(from: url)
     }
 }

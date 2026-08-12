@@ -28,6 +28,33 @@ final class TimerViewModel: ObservableObject {
     @Published var isBusy: Bool = false
     /// Completed entries that failed to sync — kept so the user can re-add them in Toggl's web view.
     @Published var pendingEntries: [PendingEntry] = []
+    /// How often a running timer flies a reminder across the screen.
+    @Published var reminderInterval: ReminderInterval =
+        .stored(UserDefaults.standard.integer(forKey: TimerViewModel.reminderIntervalKey)) {
+        didSet {
+            guard reminderInterval != oldValue else { return }
+            UserDefaults.standard.set(reminderInterval.rawValue, forKey: Self.reminderIntervalKey)
+            // Re-align to the new interval from where the current run already is.
+            if isRunning, let start = currentRunStart {
+                reminders.rearm(elapsedSeconds: Int(Date().timeIntervalSince(start)), interval: reminderInterval)
+            } else {
+                reminders.disarm()
+            }
+        }
+    }
+
+    /// Whether the user has replaced the shipped flyby artwork with their own.
+    @Published var hasCustomFlybyImage: Bool = FlybyArtwork.hasCustomImage
+    /// Result of the last flyby image import, shown inline in Settings.
+    @Published var flybyMessage: String?
+    /// Key out the background of imported artwork. On by default — most source images are
+    /// opaque, and an opaque image flies as a rectangle across a transparent window.
+    @Published var flybyRemoveBackground: Bool =
+        UserDefaults.standard.object(forKey: TimerViewModel.flybyRemoveBackgroundKey) as? Bool ?? true {
+        didSet {
+            UserDefaults.standard.set(flybyRemoveBackground, forKey: Self.flybyRemoveBackgroundKey)
+        }
+    }
 
     var onStatusChange: ((String?) -> Void)?
 
@@ -55,7 +82,13 @@ final class TimerViewModel: ObservableObject {
     private var backend: (any TogglBackend)?
     private var tickTimer: Timer?
     private let pendingStore = PendingEntryStore()
+    private let reminders = ReminderScheduler()
 
+    /// Start date of whatever run is in progress — a server-backed entry or a local one.
+    private var currentRunStart: Date? { runningEntry?.start ?? localRunStart }
+
+    private static let reminderIntervalKey = "reminderIntervalMinutes"
+    private static let flybyRemoveBackgroundKey = "flybyRemoveBackground"
     private static let localRunKey = "localRunStart"
     /// A timer started while Toggl was unreachable. Persisted so an in-progress offline run
     /// survives an app restart; it's synced to Toggl on stop (or via the pending queue).
@@ -309,6 +342,11 @@ final class TimerViewModel: ObservableObject {
 
     private func startTicking() {
         tickTimer?.invalidate()
+        // Single choke point for "a run just began/resumed" — covers a fresh start, an
+        // offline start, a restored local run, and adopting an entry started elsewhere.
+        if let start = currentRunStart {
+            reminders.rearm(elapsedSeconds: max(0, Int(Date().timeIntervalSince(start))), interval: reminderInterval)
+        }
         tick()
         tickTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in
@@ -320,24 +358,66 @@ final class TimerViewModel: ObservableObject {
     private func stopTicking() {
         tickTimer?.invalidate()
         tickTimer = nil
+        reminders.disarm()
     }
 
     private func tick() {
-        let start: Date
-        if let entry = runningEntry {
-            start = entry.start
-        } else if let local = localRunStart {
-            start = local
-        } else {
-            return
-        }
+        guard let start = currentRunStart else { return }
         let seconds = max(0, Int(Date().timeIntervalSince(start)))
         let text = Self.formatElapsed(seconds)
         elapsedText = text
         onStatusChange?(text)
+
+        if let minutes = reminders.fireIfDue(elapsedSeconds: seconds, interval: reminderInterval) {
+            let description = timerDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+            FlybyPresenter.show(
+                title: "Still tracking · \(Self.formatMinutes(minutes))",
+                subtitle: description.isEmpty ? "No description" : description
+            )
+        }
+    }
+
+    /// Fire a sample flyby so the user can see (and position) the reminder from Settings.
+    func previewFlyby() {
+        FlybyPresenter.show(title: "Still tracking · 30m", subtitle: "Preview reminder")
+    }
+
+    /// Adopt the user's own flyby artwork, then fly it once so they can see the result.
+    func importFlybyImage(from url: URL) {
+        do {
+            try FlybyArtwork.importImage(from: url, removeBackground: flybyRemoveBackground)
+            hasCustomFlybyImage = FlybyArtwork.hasCustomImage
+            flybyMessage = "Using \(url.lastPathComponent)."
+            previewFlyby()
+        } catch {
+            flybyMessage = error.localizedDescription
+        }
+    }
+
+    /// Drop the user's artwork and go back to the artwork Tracki ships with.
+    func resetFlybyImage() {
+        do {
+            try FlybyArtwork.removeCustomImage()
+            hasCustomFlybyImage = FlybyArtwork.hasCustomImage
+            flybyMessage = "Back to the default artwork."
+            previewFlyby()
+        } catch {
+            flybyMessage = error.localizedDescription
+        }
     }
 
     private static func formatElapsed(_ seconds: Int) -> String {
         String(format: "%02d:%02d:%02d", seconds / 3600, (seconds % 3600) / 60, seconds % 60)
+    }
+
+    /// 90 -> "1h 30m", 60 -> "1h", 45 -> "45m"
+    private static func formatMinutes(_ minutes: Int) -> String {
+        let hours = minutes / 60
+        let mins = minutes % 60
+        switch (hours, mins) {
+        case (0, _): return "\(mins)m"
+        case (_, 0): return "\(hours)h"
+        default: return "\(hours)h \(mins)m"
+        }
     }
 }

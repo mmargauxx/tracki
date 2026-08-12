@@ -20,11 +20,30 @@ make screenshot        # render docs/screenshot.png from the real UI (via --scre
 
 # Regenerate the app icon after editing scripts/make-icon.swift:
 swift scripts/make-icon.swift dist/AppIcon.iconset && iconutil -c icns dist/AppIcon.iconset -o Tracki/AppIcon.icns
+
+# Prepare new flyby artwork (keys out the white background, crops to content):
+swift scripts/make-flyby-asset.swift <source.png> Tracki/Resources/flyby.png
 ```
 
 There are **no tests** and no lint config. `swift build` is the correctness gate. An Xcode
 route also exists (`brew install xcodegen && xcodegen generate` via `project.yml`), but the
 Makefile/SPM path is canonical and needs only Command Line Tools.
+
+`make screenshot` is also the fastest way to **eyeball a UI change** — `ScreenshotRenderer`
+builds a `TimerViewModel` with sample data and renders the real `TimerView` offscreen, so you
+never need a Toggl token or a running menu-bar app to see a view edit.
+
+`--flyby` flies one reminder across the screen, reports whether artwork loaded, and exits —
+the way to iterate on the flyby without waiting out a real reminder interval. Run it on the
+**bundled** app (`make bundle && dist/Tracki.app/Contents/MacOS/Tracki --flyby`); a bare
+`.build/debug/Tracki` has no `Contents/Resources`, so it always reports the text fallback
+unless artwork is at the Application Support override path below.
+
+Adding a **non-Swift file** under `Tracki/` breaks `swift build` (SPM errors on unhandled
+resources) — add it to `exclude:` in `Package.swift` (currently `Info.plist`, `AppIcon.icns`,
+`Resources`). App assets go in `Tracki/Resources/`, which the Makefile's `bundle` rule copies
+into `Contents/Resources/`; there is deliberately **no SPM resource bundle**, so look them up
+via `Bundle.main`, not `Bundle.module`.
 
 ## Architecture
 
@@ -36,6 +55,10 @@ and a transient `NSPopover` hosting the SwiftUI tree via `NSHostingController`.
 **One view model, backend-agnostic.** `TimerViewModel` (`@MainActor ObservableObject`) holds
 all app state and talks only to the `TogglBackend` protocol — never to a concrete client.
 `RootView` switches between `TimerView` and `SettingsView` off `viewModel.screen`.
+The SwiftUI tree observes it via `@Published`, but the **menu-bar title is not bound** — it
+updates only through the `onStatusChange: ((String?) -> Void)?` callback that
+`StatusBarController` installs, fired from `tick()` and `clearRunningState()`. Anything that
+should appear in the status item has to be routed through that closure.
 
 **The backend abstraction is the key design.** `TogglBackend.swift` defines the protocol +
 `TogglBackendFactory`, which routes by **token prefix**:
@@ -55,7 +78,18 @@ When adding a backend capability, change it in **three places**: the `TogglBacke
   generic `/time-entries` CRUD, and `connect()` treats a 402 on projects/clients as non-fatal so
   login still succeeds with a working timer.
 - **400/403** on org-scoped v2 endpoints is remapped to a "check your Organization ID" hint
-  (`TogglV2Client.mapOrganizationError`) instead of failing the connection.
+  (`TogglV2Client.mapOrganizationError`) instead of failing the connection. For this to work
+  `requestOptional` collapses **only 401** into `.unauthorized` and lets 403 stay an
+  `.http(403, body)` — don't "tidy" it back to `case 401, 403`, or a wrong-org error reverts
+  to reading "Invalid API token". `connect()` is the exception: it isn't org-scoped, so it
+  remaps its own 403 to `.unauthorized`. Every org-scoped call routes through the mapper.
+  (The classic client keeps the `401, 403` collapse — v9 has no org concept.)
+
+**Error taxonomy.** `TogglAPIError` (declared in `TogglAPIClient.swift`, used by *both*
+backends) is the single error type crossing the protocol boundary. `.configuration(String)`
+is the "actionable user hint" case — its message is rendered verbatim in the UI, so write it
+for the user, not the log. The view model pattern-matches on `.http(status:)` and
+`.network` to decide fatal vs. non-fatal, so don't flatten these into generic errors.
 
 **Offline-first timer + deferred sync.** `TimerViewModel` can run a timer with no server round-trip
 (`localRunStart`, persisted in `UserDefaults` so it survives a restart). On stop, or when any
@@ -64,6 +98,32 @@ online stop fails, the completed entry is queued to `PendingEntryStore` (JSON at
 `backend.createCompleted(...)` on every successful (re)connect and on popover open; `TimerView`
 shows an "Unsynced" section for anything still stuck. The running timer **always clears** so the UI
 never gets stuck.
+
+**Where persisted state lives** (four different stores — check all four when changing
+login/session behaviour):
+
+| What | Where |
+|---|---|
+| API token | Keychain, service `app.tracki.toggl` / account `api-token` (`KeychainHelper`) |
+| Organization ID | `UserDefaults` key `organizationId` |
+| In-progress offline run | `UserDefaults` key `localRunStart` (a `Date`) |
+| Unsynced completed entries | `~/Library/Application Support/Tracki/pending-entries.json` |
+| Reminder interval | `UserDefaults` key `reminderIntervalMinutes` (`0` = off) |
+
+**Periodic reminders ("flyby").** While a timer runs, `ReminderScheduler` decides when to
+interrupt and `FlybyPresenter` flies artwork across the top of the screen. Three things keep
+this simple, and are worth preserving:
+- The scheduler holds **no wall-clock state** — it works purely in *elapsed seconds*, which
+  `tick()` already recomputes from the entry's start date every second. That's why reminders
+  stay correct across restarts and machine sleep, and why missed periods **coalesce into one**
+  alert instead of a burst.
+- `startTicking()` / `stopTicking()` are the single arm/disarm choke points, so every way a
+  run can begin (fresh start, offline start, restored local run, adopting an entry started
+  elsewhere) is covered without touching each call site. Adopting a 2h-old entry aligns to the
+  *next* boundary rather than firing immediately.
+- The flyby window is borderless, `.screenSaver` level, `ignoresMouseEvents`, and shown with
+  `orderFrontRegardless()` — click-through and **never steals focus**. Keep it that way; it's
+  an ambient nudge, not a dialog.
 
 **GitHub PR title sync, two paths** (`TimerViewModel` + `Services`/`Networking`):
 1. `BrowserTabReader` reads the frontmost tab of Safari/Chrome/Arc via `NSAppleScript` on popover
@@ -84,3 +144,10 @@ never gets stuck.
   — there is intentionally no historical editing except the offline re-sync path above.
 - The menu-bar glyph is an SF Symbol *template* image; the colored `.icns` is only for
   Dock/Finder/Spotlight. Keep them separate.
+- **`--screenshot` short-circuits launch**: `applicationDidFinishLaunching` returns before
+  `installEditMenu()` and `StatusBarController()`, so the screenshot path never creates a
+  status item. `ScreenshotRenderer` also can't use `ImageRenderer` (it won't draw the
+  AppKit-backed text field/pickers/button) — it renders into an offscreen `NSWindow` and
+  `cacheDisplay`s it after a runloop delay. Keep that shape if you touch it.
+- `docs/toggl-v2-api.md` names the classic host as `api.track.toggl.com`; the code actually
+  uses `https://api.toggl.com/api/v9` (`TogglAPIClient.baseURL`). Trust the code.

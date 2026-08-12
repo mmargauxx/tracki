@@ -12,6 +12,7 @@ A lightweight, dependency-free Toggl Track menu bar app for macOS 13+.
 - **Two Toggl backends, auto-selected by token prefix:** classic Toggl Track v9, or Toggl 2.0 / "Focus" (`toggl_sk_…` keys). See [`docs/toggl-v2-api.md`](docs/toggl-v2-api.md).
 - **Offline-first** — the timer runs locally when Toggl is unreachable and syncs automatically once it's back (queued to disk so nothing is lost, even across restarts).
 - **Resilient sync** — tolerates already-stopped/missing entries (HTTP 409/404) and plan gates (HTTP 402), and surfaces a clear hint when a Toggl 2.0 Organization ID is wrong (400/403).
+- **Periodic reminders** — pick an interval (15/30/45/60 min) in Settings and a piece of artwork drifts across your screen while a timer runs. Click-through and never steals focus. Drop your own art at `~/Library/Application Support/Tracki/flyby.png`.
 - GitHub PR title sync, two ways:
   1. **Active tab reader** — on popover open, reads the active tab of Safari / Chrome / Arc via AppleScript; if it's a GitHub PR, the title auto-fills.
   2. **Paste and fetch** — paste a PR URL into the title field and it's replaced with the PR title via the GitHub API.
@@ -39,10 +40,13 @@ tracki/
     │   ├── TogglAPIClient.swift        # classic Toggl v9 (async/await, Basic auth)
     │   ├── TogglV2Client.swift         # Toggl 2.0 / Focus (Bearer, org-scoped)
     │   └── GitHubAPIClient.swift       # PR URL parser + public GitHub API
+    ├── Resources/                      # app assets (flyby.png) — copied in by `make bundle`
     ├── Services/
     │   ├── BrowserTabReader.swift      # NSAppleScript active-tab reader
     │   ├── KeychainHelper.swift        # API token storage
-    │   └── PendingEntryStore.swift     # on-disk offline queue for unsynced entries
+    │   ├── PendingEntryStore.swift     # on-disk offline queue for unsynced entries
+    │   ├── ReminderScheduler.swift     # when to fire a reminder while tracking
+    │   └── FlybyPresenter.swift        # click-through overlay window + artwork loading
     ├── ViewModels/TimerViewModel.swift # app state, timer tick, offline/sync, PR sync
     └── Views/
         ├── RootView.swift              # timer ⇄ settings switch

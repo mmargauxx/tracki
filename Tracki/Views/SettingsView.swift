@@ -67,6 +67,10 @@ struct SettingsView: View {
 
             Divider()
 
+            remindersSection
+
+            Divider()
+
             Button("Quit Tracki") {
                 NSApp.terminate(nil)
             }
@@ -77,5 +81,29 @@ struct SettingsView: View {
         }
         .padding()
         .frame(width: 320)
+    }
+
+    /// Periodic "you're still tracking" flyby. Only fires while a timer is running.
+    private var remindersSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Picker("Remind me", selection: $viewModel.reminderInterval) {
+                ForEach(ReminderInterval.allCases) { interval in
+                    Text(interval.label).tag(interval)
+                }
+            }
+            .pickerStyle(.menu)
+
+            HStack(spacing: 6) {
+                Text(viewModel.reminderInterval == .off
+                     ? "No reminders while tracking."
+                     : "Flies across the screen while a timer runs.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Spacer()
+                Button("Preview", action: viewModel.previewFlyby)
+                    .buttonStyle(.link)
+                    .font(.caption)
+            }
+        }
     }
 }

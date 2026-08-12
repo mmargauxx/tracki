@@ -17,6 +17,8 @@ bundle: build
 	cp $(BINARY) $(CONTENTS)/MacOS/$(APP)
 	cp Tracki/Info.plist $(CONTENTS)/Info.plist
 	cp Tracki/AppIcon.icns $(CONTENTS)/Resources/AppIcon.icns
+	-cp -R Tracki/Resources/. $(CONTENTS)/Resources/ 2>/dev/null || true
+	rm -f $(CONTENTS)/Resources/README.md
 	printf 'APPL????' > $(CONTENTS)/PkgInfo
 	codesign --force --sign - --entitlements Tracki.entitlements $(BUNDLE)
 	@echo "Built $(BUNDLE)"

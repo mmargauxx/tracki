@@ -1,8 +1,8 @@
 # Flyby artwork
 
 Drop the flyby image here as `flyby.png` (`.gif`, `.jpg`, and `.pdf` also work — see
-`FlybyAsset.extensions`). `make bundle` copies everything in this folder into
-`Tracki.app/Contents/Resources/`, and `FlybyAsset.load()` picks it up from there.
+`FlybyArtwork.extensions`). `make bundle` copies everything in this folder into
+`Tracki.app/Contents/Resources/`, and `FlybyArtwork.load()` picks it up from there.
 
 Two things to know:
 
@@ -22,6 +22,10 @@ flyby window is fully transparent and click-through.
 Orientation: the artwork is assumed to face **left**, because the flyby travels right-to-left
 across the top of the screen. If it faces right, flip the `start`/`end` frames in
 `FlybyPresenter.show`.
+
+Users don't need any of this: **Settings ▸ Choose Image…** imports their own artwork (with
+background removal) and writes it to the Application Support path above. This folder is only
+the default that ships in the box.
 
 ## Preparing new artwork
 

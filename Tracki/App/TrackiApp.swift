@@ -31,8 +31,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // the flyby artwork without waiting out a real reminder interval.
         if CommandLine.arguments.contains("--flyby") {
             MainActor.assumeIsolated {
-                print(FlybyAsset.load() == nil
-                      ? "flyby: no artwork found — using the text fallback. See FlybyAsset."
+                print(FlybyArtwork.load() == nil
+                      ? "flyby: no artwork found — using the text fallback. See FlybyArtwork."
                       : "flyby: artwork loaded.")
                 FlybyPresenter.show(title: "Still tracking · 30m", subtitle: "Preview reminder")
             }

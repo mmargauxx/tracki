@@ -124,6 +124,14 @@ this simple, and are worth preserving:
 - The flyby window is borderless, `.screenSaver` level, `ignoresMouseEvents`, and shown with
   `orderFrontRegardless()` — click-through and **never steals focus**. Keep it that way; it's
   an ambient nudge, not a dialog.
+- `FlybyArtwork` owns loading *and* import. Imported art is keyed with an **edge flood fill**,
+  never a global white key — a global key punches holes in white parts *inside* a drawing
+  (lettering, windows, highlights). Its pixel buffer is allocated with
+  `UnsafeMutablePointer.allocate`, not `Array.withUnsafeMutableBytes`, because the `CGContext`
+  must outlive the access; don't "simplify" that back to an Array closure.
+- `scripts/make-flyby-asset.swift` runs the same algorithm from the CLI, for prepping the
+  asset that ships in `Tracki/Resources/`. Verified byte-identical to the in-app path — if you
+  change one, change both.
 
 **GitHub PR title sync, two paths** (`TimerViewModel` + `Services`/`Networking`):
 1. `BrowserTabReader` reads the frontmost tab of Safari/Chrome/Arc via `NSAppleScript` on popover

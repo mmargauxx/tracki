@@ -68,53 +68,15 @@ enum FlybyPresenter {
     }
 }
 
-/// Loads the flyby artwork, newest-wins across two locations.
-///
-/// **ASSET DROP POINTS** — the app looks for `flyby.png` (or `.gif`/`.jpg`) in:
-///  1. `~/Library/Application Support/Tracki/flyby.png` — a live override. Drop a file here
-///     and the next flyby uses it, no rebuild. Best for iterating on the art.
-///  2. The app bundle's `Resources/` — the shipped default. Add the file to
-///     `Tracki/Resources/` in the repo; `make bundle` copies it in.
-///
-/// With neither present the flyby falls back to a plain text card, so the reminder still
-/// works before any artwork lands.
-enum FlybyAsset {
-    private static let basename = "flyby"
-    private static let extensions = ["png", "gif", "jpg", "jpeg", "pdf"]
-
-    static var overrideDirectory: URL? {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
-            .appendingPathComponent("Tracki", isDirectory: true)
-    }
-
-    static func load() -> NSImage? {
-        if let dir = overrideDirectory {
-            for ext in extensions {
-                let url = dir.appendingPathComponent("\(basename).\(ext)")
-                if FileManager.default.fileExists(atPath: url.path),
-                   let image = NSImage(contentsOf: url) {
-                    return image
-                }
-            }
-        }
-        for ext in extensions {
-            if let url = Bundle.main.url(forResource: basename, withExtension: ext),
-               let image = NSImage(contentsOf: url) {
-                return image
-            }
-        }
-        return nil
-    }
-}
-
 /// The flyby's visual: the artwork, with the elapsed time in a small pill beneath it.
+/// Artwork loading and import live in `FlybyArtwork`.
 private struct FlybyCard: View {
     let title: String
     let subtitle: String
 
     var body: some View {
         VStack(spacing: 6) {
-            if let artwork = FlybyAsset.load() {
+            if let artwork = FlybyArtwork.load() {
                 Image(nsImage: artwork)
                     .resizable()
                     .interpolation(.high)
@@ -130,7 +92,7 @@ private struct FlybyCard: View {
         .fixedSize()
     }
 
-    /// Shown until artwork is dropped in — see `FlybyAsset`.
+    /// Shown until artwork is dropped in — see `FlybyArtwork`.
     private var placeholder: some View {
         Image(systemName: "stopwatch")
             .font(.system(size: 44))

@@ -43,6 +43,19 @@ final class TimerViewModel: ObservableObject {
         }
     }
 
+    /// Whether the user has replaced the shipped flyby artwork with their own.
+    @Published var hasCustomFlybyImage: Bool = FlybyArtwork.hasCustomImage
+    /// Result of the last flyby image import, shown inline in Settings.
+    @Published var flybyMessage: String?
+    /// Key out the background of imported artwork. On by default — most source images are
+    /// opaque, and an opaque image flies as a rectangle across a transparent window.
+    @Published var flybyRemoveBackground: Bool =
+        UserDefaults.standard.object(forKey: TimerViewModel.flybyRemoveBackgroundKey) as? Bool ?? true {
+        didSet {
+            UserDefaults.standard.set(flybyRemoveBackground, forKey: Self.flybyRemoveBackgroundKey)
+        }
+    }
+
     var onStatusChange: ((String?) -> Void)?
 
     var isRunning: Bool { runningEntry != nil || localRunStart != nil }
@@ -75,6 +88,7 @@ final class TimerViewModel: ObservableObject {
     private var currentRunStart: Date? { runningEntry?.start ?? localRunStart }
 
     private static let reminderIntervalKey = "reminderIntervalMinutes"
+    private static let flybyRemoveBackgroundKey = "flybyRemoveBackground"
     private static let localRunKey = "localRunStart"
     /// A timer started while Toggl was unreachable. Persisted so an in-progress offline run
     /// survives an app restart; it's synced to Toggl on stop (or via the pending queue).
@@ -366,6 +380,30 @@ final class TimerViewModel: ObservableObject {
     /// Fire a sample flyby so the user can see (and position) the reminder from Settings.
     func previewFlyby() {
         FlybyPresenter.show(title: "Still tracking · 30m", subtitle: "Preview reminder")
+    }
+
+    /// Adopt the user's own flyby artwork, then fly it once so they can see the result.
+    func importFlybyImage(from url: URL) {
+        do {
+            try FlybyArtwork.importImage(from: url, removeBackground: flybyRemoveBackground)
+            hasCustomFlybyImage = FlybyArtwork.hasCustomImage
+            flybyMessage = "Using \(url.lastPathComponent)."
+            previewFlyby()
+        } catch {
+            flybyMessage = error.localizedDescription
+        }
+    }
+
+    /// Drop the user's artwork and go back to the artwork Tracki ships with.
+    func resetFlybyImage() {
+        do {
+            try FlybyArtwork.removeCustomImage()
+            hasCustomFlybyImage = FlybyArtwork.hasCustomImage
+            flybyMessage = "Back to the default artwork."
+            previewFlyby()
+        } catch {
+            flybyMessage = error.localizedDescription
+        }
     }
 
     private static func formatElapsed(_ seconds: Int) -> String {

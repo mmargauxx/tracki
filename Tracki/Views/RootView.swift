@@ -12,7 +12,9 @@ struct RootView: View {
                 SettingsView(viewModel: viewModel)
             }
         }
+        // No SwiftUI animation on the screen switch: the popover frame resizes instantly
+        // (animates = false), so animating the content inside it only produces a clipped,
+        // jumping crossfade.
         .frame(width: 320)
-        .animation(.easeInOut(duration: 0.15), value: viewModel.screen)
     }
 }

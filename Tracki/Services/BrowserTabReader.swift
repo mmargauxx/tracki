@@ -15,11 +15,13 @@ enum BrowserTabReader {
     /// returns the first whose active tab URL parses as a GitHub PR.
     /// Must be called on the main thread (NSAppleScript is not thread-safe).
     @MainActor
-    static func frontmostPRTab() -> BrowserPRTab? {
+    /// `frontmostBundleID` should be captured *before* Tracki activates itself, otherwise
+    /// the frontmost app is always Tracki.
+    static func frontmostPRTab(frontmostBundleID: String?) -> BrowserPRTab? {
         let running = Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))
         var order = [safariID, chromeID, arcID].filter(running.contains)
 
-        if let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
+        if let front = frontmostBundleID,
            order.contains(front) {
             order.removeAll { $0 == front }
             order.insert(front, at: 0)

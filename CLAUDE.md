@@ -82,8 +82,9 @@ Gotchas, each of which has bitten:
   live process, which keeps running the old code — quit and relaunch, or you're testing the
   previous version.
 - **Brew quarantines cask installs**, and Tracki is only ad-hoc signed, so a normal upgrade
-  trips Gatekeeper. Use `brew upgrade --cask --no-quarantine tracki`, or clear it after the
-  fact with `xattr -d -r com.apple.quarantine /Applications/Tracki.app`.
+  trips Gatekeeper. Clear it after the upgrade with
+  `xattr -d -r com.apple.quarantine /Applications/Tracki.app`. (Homebrew 7 removed
+  `--no-quarantine`; don't recommend it.)
 - The cask's `zap trash:` covers `~/Library/Application Support/Tracki`, which holds both
   `pending-entries.json` and the user's custom `flyby.png`. Anything new stored elsewhere
   needs adding there.

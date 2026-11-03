@@ -64,7 +64,8 @@ brew install --cask mmargauxx/tap/tracki
 ```
 
 Tracki is ad-hoc signed (not notarized), so on first launch either right-click the app in
-`/Applications` ▸ **Open**, or install with `brew install --cask --no-quarantine mmargauxx/tap/tracki`.
+`/Applications` ▸ **Open**, or clear the quarantine flag after installing:
+`xattr -d -r com.apple.quarantine /Applications/Tracki.app`.
 
 Upgrade or remove:
 

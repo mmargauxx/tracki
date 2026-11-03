@@ -78,7 +78,9 @@ struct TimerView: View {
     private func errorSection(_ message: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Button {
-                withAnimation(.easeInOut(duration: 0.15)) { showErrorDetail.toggle() }
+                // Not animated — the popover resizes instantly, and animating the content
+                // inside it makes the text slide around a frame that already snapped.
+                showErrorDetail.toggle()
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "exclamationmark.triangle.fill")

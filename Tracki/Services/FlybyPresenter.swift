@@ -22,20 +22,26 @@ enum FlybyPresenter {
         guard let screen = NSScreen.main else { return }
 
         inFlight?.close()
+        inFlight = nil
 
-        let hosting = NSHostingView(rootView: FlybyCard(title: title, subtitle: subtitle))
-        let size = hosting.fittingSize
-        hosting.frame = CGRect(origin: .zero, size: size)
+        // Render the card to a bitmap once, then let Core Animation slide that bitmap. The
+        // old approach animated the *window frame*, which AppKit steps from a CPU timer and
+        // re-lays out the SwiftUI view on every step — visibly jittery, and the off-screen
+        // start/end positions put the window on a neighbouring display.
+        let scale = screen.backingScaleFactor
+        let renderer = ImageRenderer(content: FlybyCard(title: title, subtitle: subtitle))
+        renderer.scale = scale
+        guard let image = renderer.cgImage else { return }
+        let size = CGSize(width: CGFloat(image.width) / scale, height: CGFloat(image.height) / scale)
 
-        // Fly across the upper part of the usable area. The artwork faces left, so it
-        // travels right-to-left.
+        // A stationary strip across the usable width of this screen. The card travels inside
+        // it, so it's clipped at the screen edges and never leaks onto another monitor.
+        // The artwork faces left, so it travels right-to-left.
         let visible = screen.visibleFrame
         let y = visible.maxY - size.height - 8 - (visible.height * verticalDropFraction)
-        let start = CGRect(x: visible.maxX + 8, y: y, width: size.width, height: size.height)
-        let end = CGRect(x: visible.minX - size.width - 8, y: y, width: size.width, height: size.height)
+        let strip = CGRect(x: visible.minX, y: y, width: visible.width, height: size.height)
 
-        let window = NSWindow(contentRect: start, styleMask: .borderless, backing: .buffered, defer: false)
-        window.contentView = hosting
+        let window = NSWindow(contentRect: strip, styleMask: .borderless, backing: .buffered, defer: false)
         window.isOpaque = false
         window.backgroundColor = .clear
         window.hasShadow = false
@@ -44,27 +50,48 @@ enum FlybyPresenter {
         // Above normal windows and full-screen apps, and visible on every Space.
         window.level = .screenSaver
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
-        window.alphaValue = 0
+
+        let container = NSView(frame: CGRect(origin: .zero, size: strip.size))
+        container.wantsLayer = true
+        container.layer?.masksToBounds = true
+        window.contentView = container
+
+        let card = CALayer()
+        card.contents = image
+        card.contentsScale = scale
+        card.bounds = CGRect(origin: .zero, size: size)
+        card.anchorPoint = .zero
+        let startX = strip.width
+        let endX = -size.width
+        card.position = CGPoint(x: endX, y: 0) // model value = final state; no snap-back
+        container.layer?.addSublayer(card)
 
         // `orderFrontRegardless` (not makeKeyAndOrderFront) keeps the current app in focus.
         window.orderFrontRegardless()
         inFlight = window
 
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.4
-            window.animator().alphaValue = 1
-        }
-
-        NSAnimationContext.runAnimationGroup({ context in
-            context.duration = travelDuration
-            context.timingFunction = CAMediaTimingFunction(name: .linear)
-            window.animator().setFrame(end, display: true)
-        }, completionHandler: {
+        CATransaction.begin()
+        CATransaction.setCompletionBlock {
             MainActor.assumeIsolated {
                 window.close()
                 if inFlight === window { inFlight = nil }
             }
-        })
+        }
+
+        let travel = CABasicAnimation(keyPath: "position.x")
+        travel.fromValue = startX
+        travel.toValue = endX
+        travel.duration = travelDuration
+        travel.timingFunction = CAMediaTimingFunction(name: .linear)
+        card.add(travel, forKey: "travel")
+
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 0
+        fade.toValue = 1
+        fade.duration = 0.4
+        card.add(fade, forKey: "fade")
+
+        CATransaction.commit()
     }
 }
 

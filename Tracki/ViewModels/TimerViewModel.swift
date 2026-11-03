@@ -83,6 +83,9 @@ final class TimerViewModel: ObservableObject {
     private var tickTimer: Timer?
     private let pendingStore = PendingEntryStore()
     private let reminders = ReminderScheduler()
+    /// True while `syncPending()` is pushing the queue. It runs from both popover open and
+    /// reconnect; two overlapping passes would POST the same entry twice.
+    private var isSyncing = false
 
     /// Start date of whatever run is in progress — a server-backed entry or a local one.
     private var currentRunStart: Date? { runningEntry?.start ?? localRunStart }
@@ -216,7 +219,9 @@ final class TimerViewModel: ObservableObject {
     /// Push any locally-queued entries to Toggl. Called after a successful (re)connect and
     /// when the popover opens. Entries that still fail stay queued for the next attempt.
     func syncPending() async {
-        guard connectionState == .connected, let backend, !pendingStore.entries.isEmpty else { return }
+        guard !isSyncing, connectionState == .connected, let backend, !pendingStore.entries.isEmpty else { return }
+        isSyncing = true
+        defer { isSyncing = false }
         for entry in pendingStore.entries {
             do {
                 try await backend.createCompleted(
@@ -254,12 +259,12 @@ final class TimerViewModel: ObservableObject {
         Int(organizationIdInput.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
-    func popoverOpened() {
+    func popoverOpened(frontmostBundleID: String?) {
         // If we dropped offline, retry the connection; a success flushes the pending queue.
         reconnectIfNeeded()
         Task { await syncPending() }
         guard connectionState == .connected, !isRunning, timerDescription.isEmpty else { return }
-        if let tab = BrowserTabReader.frontmostPRTab() {
+        if let tab = BrowserTabReader.frontmostPRTab(frontmostBundleID: frontmostBundleID) {
             timerDescription = tab.title
         }
     }
@@ -294,9 +299,14 @@ final class TimerViewModel: ObservableObject {
         self.backend = backend
         Task {
             // Only token validation / workspace resolution can block login.
+            // A newer connect() (e.g. Save & Connect pressed again) supersedes this one;
+            // a stale result must not overwrite its state.
+            let isStale: @MainActor () -> Bool = { [weak self] in self?.backend !== backend }
+
             do {
                 try await backend.connect()
             } catch {
+                guard !isStale() else { return }
                 connectionState = .failed(error.localizedDescription)
                 // A connectivity failure (vs. bad credentials) still lets the user run a local
                 // timer that syncs later, so keep them on the timer screen instead of Settings.
@@ -311,11 +321,19 @@ final class TimerViewModel: ObservableObject {
 
             // Logged in. Load supporting data best-effort — a plan gate (HTTP 402), a missing
             // org id, or any single endpoint failing must NOT block using the timer.
-            clients = (try? await backend.fetchClients()) ?? []
+            let fetchedClients = (try? await backend.fetchClients()) ?? []
+            guard !isStale() else { return }
+            clients = fetchedClients
 
             do {
-                projects = try await backend.fetchProjects()
-                if let entry = try await backend.currentEntry() {
+                let fetchedProjects = try await backend.fetchProjects()
+                guard !isStale() else { return }
+                projects = fetchedProjects
+                // Only adopt a server-side running entry when nothing is running here. If a
+                // local (offline) run is in progress, adopting would hide it and its time
+                // would be lost on stop; if we already track this entry, re-adopting would
+                // clobber description/project edits made while offline.
+                if !isRunning, let entry = try await backend.currentEntry(), !isStale(), !isRunning {
                     runningEntry = entry
                     timerDescription = entry.description ?? ""
                     selectedProjectId = entry.projectId
@@ -333,6 +351,7 @@ final class TimerViewModel: ObservableObject {
                 errorMessage = error.localizedDescription
             }
 
+            guard !isStale() else { return }
             connectionState = .connected
             screen = .timer
             // Back online — flush anything tracked while we were offline.
@@ -348,11 +367,15 @@ final class TimerViewModel: ObservableObject {
             reminders.rearm(elapsedSeconds: max(0, Int(Date().timeIntervalSince(start))), interval: reminderInterval)
         }
         tick()
-        tickTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.tick()
             }
         }
+        // `.common`, not the default mode — otherwise the menu-bar clock freezes while a
+        // Picker menu or the status item is being tracked.
+        RunLoop.main.add(timer, forMode: .common)
+        tickTimer = timer
     }
 
     private func stopTicking() {

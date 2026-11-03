@@ -29,6 +29,13 @@ There are **no tests** and no lint config. `swift build` is the correctness gate
 route also exists (`brew install xcodegen && xcodegen generate` via `project.yml`), but the
 Makefile/SPM path is canonical and needs only Command Line Tools.
 
+**If the build fails with `plugin for module 'SwiftUIMacros' not found`** (on `@State`), it's
+the toolchain, not the code: the Command Line Tools' macOS 27 SDK declares `@State` as a
+macro but ships no plugin for it. Build against the older SDK instead — this works for
+`make` targets too:
+`SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk swift build`.
+Installing full Xcode also fixes it.
+
 `make screenshot` is also the fastest way to **eyeball a UI change** — `ScreenshotRenderer`
 builds a `TimerViewModel` with sample data and renders the real `TimerView` offscreen, so you
 never need a Toggl token or a running menu-bar app to see a view edit.
